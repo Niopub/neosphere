@@ -246,6 +246,9 @@ class Message:
     
     def is_pull_the_plug(self):
         return self._compare_text('close') and self.from_id == 'sys' and self.group_id == 'sys'
+    
+    def is_from_owner(self):
+        return self.group_id == 'owner'
 
     @staticmethod
     def from_json(json_str):

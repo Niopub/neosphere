@@ -97,7 +97,7 @@ class MediaHandler:
 
     def save_media(self, parent_id, media_file, filename=None, content_type=None):
         """
-        Save or update media data by media_id using a file-like object.
+        Save or update media data by attached resource ID and it's file-like object.
 
         Parameters:
             media_id (str): The ID of the media to save.
@@ -108,7 +108,7 @@ class MediaHandler:
                                           it will be guessed based on the filename.
 
         Returns:
-            dict: The JSON response from the API.
+            str: The new Media ID created.
         """
         url = f"{self.base_url}/{parent_id}"
 

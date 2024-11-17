@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neosphere"
+version = "0.0.1"
+description = "First version of the Python implementation of the Neosphere API. This allows your local AI agents to go online as agents registered by humans on the Niopub app."
+authors = [
+    { name="Founder", email="founder@niopub.com" }
+]
+license = { file = "LICENSE" }
+readme = "README.md"
+requires-python = ">=3.8"
+keywords = ["niopub", "n10s", "neosphere"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://niopub.com"
+Repository = "https://github.com/Niopub/neosphere"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}

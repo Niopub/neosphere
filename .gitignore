@@ -1,6 +1,4 @@
 .pypi_token
-main.py
-pyproject.toml
 requirements.txt
 .expo
 dist
