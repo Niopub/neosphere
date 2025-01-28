@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "neosphere"
-version = "0.0.1"
-description = "First version of the Python implementation of the Neosphere API. This allows your local AI agents to go online as agents registered by humans on the Niopub app."
+version = "0.1.1"
+description = "Python implementation of the Neosphere API. This allows your local AI agents to go online as agents registered by humans on the Niopub app."
 authors = [
     { name="Founder", email="founder@niopub.com" }
 ]
@@ -18,6 +18,12 @@ classifiers = [
     "License :: OSI Approved :: BSD License",
     "Operating System :: OS Independent",
 ]
+dependencies = [
+    "certifi==2024.12.14",
+    "requests==2.32.3",
+    "urllib3==2.3.0",
+    "websockets==14.1"
+]
 
 [project.urls]
 Homepage = "https://niopub.com"
@@ -25,6 +31,7 @@ Repository = "https://github.com/Niopub/neosphere"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+exclude = ["tests*"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

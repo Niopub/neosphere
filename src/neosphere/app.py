@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, List
 import json
 
 import websockets
@@ -11,7 +11,6 @@ from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
 from .message_handlers import AgentReceiver
 import logging
 logger = logging.getLogger('neosphere').getChild(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 class AsyncWebSocketApp(object):
@@ -27,8 +26,9 @@ class AsyncWebSocketApp(object):
     MAX_RETRIES = 10
     GAP_BETWEEN_RETRIES_SEC = 2
 
-    def __init__(self, url: str, recvr: AgentReceiver) -> None:
-        self.url = url
+    def __init__(self, recvr: AgentReceiver, url: str = None) -> None:
+        self.server_url = url if url else "wss://n10s.net/"
+        self.url = self.server_url + "stream/ai"
         self.reciever = recvr
         self._authorize_called = False
         self._listening = False

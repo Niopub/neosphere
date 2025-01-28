@@ -9,12 +9,13 @@ from websockets.client import WebSocketClientProtocol
 
 import logging
 
+from .contacts import Contacts
 from .media_handler import MediaHandler
 logger = logging.getLogger('neosphere').getChild(__name__)
 import json
 import traceback
 
-class AgentIntentHandler(asyncio.Queue):
+class AgentHandler(asyncio.Queue):
     """
     Handler handles intents that are usually outgoing requests. 
     It then adds the message to the instance's queue if it's a 
@@ -29,6 +30,7 @@ class AgentIntentHandler(asyncio.Queue):
         super().__init__(*args, **kwargs)
         self.query_index = query_index
         self.backoff_signal_template = {'cmd': 'err', 'text': 'w8'}
+        self.hold_signal_template = {'cmd': 'err', 'text': 'hold'}
         self.name = name
 
     async def send(self, item: Any) -> None:
@@ -42,6 +44,9 @@ class AgentIntentHandler(asyncio.Queue):
 
     def register_media_handler(self, media_handler: MediaHandler):
         self.media_handler = media_handler
+    
+    def register_contacts_handler(self, contacts: Contacts):
+        self.contacts = contacts
     
     async def get_media(self, media_id)->str:
         if self.media_handler:
@@ -159,12 +164,35 @@ class AgentIntentHandler(asyncio.Queue):
         }
         return query_id
     
-    async def send_backoff_signal(self, from_id):
-        err_signal = self.backoff_signal_template.copy()
-        err_signal['to_id'] = from_id
-        await self.send(err_signal)
+    async def send_backoff_signal(self, to_id):
+        """
+        If the network sees multiple backoff signals from you to the same agent, 
+        we will eventually put the agent on a 30s hold from sending you messages.
 
-    async def record_query_response_recvd(self, query_id, response: Message):
+        Useful when an agent is sending too many queries and you want to slow them down.
+        """
+        err_signal = self.backoff_signal_template.copy()
+        err_signal['to_id'] = to_id
+        await self.send(err_signal)
+    
+    async def put_a_30s_hold(self, group_id):
+        """
+        Putting a 30s hold on a group will prevent any user in the group from 
+        sending queries to the agent for 30s.
+
+        Useful when an agent is getting too many queries from a group and you want to slow them down.
+        """
+        hold_signal = self.hold_signal_template.copy()
+        hold_signal['group_id'] = group_id
+        await self.send(hold_signal)
+
+    async def _record_query_response_recvd(self, query_id, response: Message):
+        """
+        This is an internal helper function to record the response received for a query in the query_index.
+
+        This method is intended to be used by the connection handler to record the response received for a query
+        and should not be called directly by the client (our AI agent).
+        """
         # check if query_id exists in query_index
         if query_id in self.query_index:
             logger.warning(f"Got response for query ID {query_id} (from agent {response.from_id}).")
@@ -177,6 +205,13 @@ class AgentIntentHandler(asyncio.Queue):
             return
     
     async def wait_for_query_response(self, query_id, timeout=10, check_interval=0.5) -> Message:
+        """
+        Given a query_id, this function will wait for the response to the query.
+
+        The wait logic is simple, it checks if the query_id is in the query_index and if it has a response_rcv key.
+        The response_rcv key is added to the query_index when a response is received for the query_id on the 
+        connection. If the response is not received within the timeout, the function will return None.
+        """
         start_time = int(time.time())
         while True:
             logger.info(f"Checking for query response for query ID: {query_id}...")
@@ -195,6 +230,11 @@ class AgentIntentHandler(asyncio.Queue):
             await asyncio.sleep(check_interval)
     
     async def respond_to_agent_query(self, agent_id, query_id, response_data, media_ids: List[str]=[]):
+        """
+        Send a response to a query from another agent.
+
+        Requires the query_id you received in the original query to be sent back with this response.
+        """
         query_created = {
             'cmd': 'ans',
             'to_id': agent_id,
@@ -269,31 +309,35 @@ class AgentReceiver:
                  connection_code, 
                  client_name, 
                  group_message_receiver, 
-                 query_receiver) -> None:
+                 query_receiver,
+                 contacts=[],
+                 **context) -> None:
         self.agent_share_id = agent_share_id
         self.connection_code = connection_code
         self.client_name = client_name
         self.group_message_receiver = group_message_receiver
         self.query_receiver = query_receiver
         self.reconnection_token = None
+        self.context_to_forward = context
         # query tracker is any simple key value structure the client will use to keep a track of queries sent and their responses received.
         # this allows the client to provide a blocking wait for a query response.
         self.query_tracker = {}
-        self.client_handler = AgentIntentHandler(query_index=self.query_tracker, name=agent_share_id)
+        self.client_handler = AgentHandler(query_index=self.query_tracker, name=agent_share_id)
         self.recieved_pull_the_plug = False
+        self.initial_contacts = contacts
 
 
     async def set_websocket(self, ws: WebSocketClientProtocol):
         self.ws = ws
 
     async def before_connect(self):
-        logger.info('before_connect')
+        pass
 
     async def attempt_reconnect(self):
-        logger.info('before_connect')
+        pass
 
     async def on_connect(self):
-        logger.info('on_connect')
+        pass
     
     async def on_authorize(self):
         if not self.reconnection_token:
@@ -320,19 +364,22 @@ class AgentReceiver:
             if msg.token:
                 self.reconnection_token = msg.token
                 self.client_handler.register_media_handler(MediaHandler(self.reconnection_token, "/tmp/neosphere_media"))
-                logger.info("Received a connection token. Registered media handler.")
+                self.client_handler.register_contacts_handler(Contacts(self.reconnection_token, self.initial_contacts))
+                # initialize contacts
+                # Contacts().initial_public_contacts(public_contacts)
+                logger.info(f"Received a connection token. Registered media handler and fetched ({self.client_handler.contacts.get_contact_count()}) contacts.")
             if msg.is_err:
                 logger.error(f"Received error message.")
             if msg.group_id:
                 if not msg.is_err:
                     logger.info('Message is group message')
-                    await self.group_message_receiver(msg, self.client_handler)
+                    await self.group_message_receiver(msg, self.client_handler, **self.context_to_forward)
                 else:
-                    logger.error(f"(Group) Error from: {msg.from_id}. Error: {msg.text}")
+                    logger.error(f"(Group={msg.group_id}) Error from: {msg.from_id}. Error: {msg.text}")
             elif msg.query_id:
                 if msg.is_resp and not msg.is_err:
                     logger.info('Message is a query resp')
-                    await self.client_handler.record_query_response_recvd(msg.query_id, msg)
+                    await self.client_handler._record_query_response_recvd(msg.query_id, msg, **self.context_to_forward)
                 elif msg.is_err:
                     logger.error(f"(Agent) Error from: {msg.get('from_id')}. Error: {msg.get('text')}")
                 else:

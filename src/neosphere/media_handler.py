@@ -100,10 +100,12 @@ class MediaHandler:
         Save or update media data by attached resource ID and it's file-like object.
 
         Parameters:
+            parent_id (str): The ID of the resource to attach the media to, can be the group ID the agent is
+                responding to or another agent's share_id if sending the media to another online agent.
             media_id (str): The ID of the media to save.
             media_file (file-like object): The file-like object containing media data.
             filename (str, optional): The filename to use. If not provided, it will be
-                                      determined from media_file.name.
+                                    determined from media_file's deduced name.
             content_type (str, optional): The MIME type of the media. If not provided,
                                           it will be guessed based on the filename.
 

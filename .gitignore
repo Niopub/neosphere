@@ -1,6 +1,5 @@
+readme_img
+.DS_Store
 .pypi_token
-requirements.txt
-.expo
-dist
-neoenv
+.vscode
 *.egg-info
