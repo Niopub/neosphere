@@ -1,23 +1,71 @@
-from __future__ import annotations
-
+from neosphere.contacts import Contacts
+from neosphere.media_handler import MediaHandler
 import asyncio
 import time
-from typing import Any, List
 import uuid
-
-from websockets.client import WebSocketClientProtocol
-
-import logging
-
-from .contacts import Contacts
-from .media_handler import MediaHandler
-logger = logging.getLogger('neosphere').getChild(__name__)
 import json
-import traceback
+from typing import Any, List
+import logging
+logger = logging.getLogger('neosphere-client').getChild(__name__)
 
-class AgentHandler(asyncio.Queue):
+
+class Message:
+    def __init__(self, **kwargs) -> None:
+        # check if token in kwargs
+        self.token = kwargs.get('token', None)
+        self.text: str = kwargs.get('text', None)
+        self.data_ids = kwargs.get('data_ids', [])
+        self.from_id = kwargs.get('from_id', None)
+        self.group_id = kwargs.get('group_id', None)
+        self.query_id = kwargs.get('query_id', None)
+        self.is_resp = kwargs.get('is_resp', False)
+        self.is_err = kwargs.get('is_err', False)
+
+    def to_dict(self):
+        if self.token:
+            return {
+                'token': self.token
+            }
+        return {
+            'text': self.text,
+            'data_ids': self.data_ids,
+            'from_id': self.from_id,
+            'group_id': self.group_id,
+            'query_id': self.query_id,
+            'is_resp': self.is_resp,
+            'is_err': self.is_err,
+        }
+
+    def to_json(self):
+        return json.dumps(self.to_dict())
+
+    def __str__(self):
+        return self.to_dict()
+
+    def _compare_text(self, text):
+        if self.text and self.text == text:
+            return True
+        return False
+
+    def is_pull_the_plug(self):
+        return self._compare_text('close') and self.from_id == 'sys' and self.group_id == 'sys'
+
+    def is_from_admin(self):
+        return self.from_id.startswith('admin_')
+
+    @staticmethod
+    def from_json(json_str):
+        message_dict = json.loads(json_str)
+        return Message.from_dict(message_dict)
+
+    @staticmethod
+    def from_dict(message_dict):
+        return Message(**message_dict)
+
+
+class NeosphereClient(asyncio.Queue):
     """
-    Handler handles intents that are usually outgoing requests. 
+    Client handles intents that are usually outgoing requests. 
     It then adds the message to the instance's queue if it's a 
     query that needs to be tracked for response.
     """
@@ -38,23 +86,23 @@ class AgentHandler(asyncio.Queue):
 
     async def recv(self) -> Any:
         return await self.get()
-    
+
     def get_query_index(self):
         return self.query_index
 
     def register_media_handler(self, media_handler: MediaHandler):
         self.media_handler = media_handler
-    
+
     def register_contacts_handler(self, contacts: Contacts):
         self.contacts = contacts
-    
+
     async def get_media(self, media_id)->str:
         if self.media_handler:
             return await self.media_handler.get_media(media_id)
         else:
             logger.error(f"No media handler registered, to get {media_id}.")
             return None
-    
+
     async def get_medias(self, *media_ids):
         media_list = []
         if len(media_ids) == 1 and isinstance(media_ids[0], list):
@@ -69,7 +117,7 @@ class AgentHandler(asyncio.Queue):
         else:
             logger.error(f"No media handler registered, to get {media_id}.")
         return media_list
-    
+
     async def create_forward_copy(self, forward_to_id, *media_ids):
         new_list = []
         if len(media_ids) == 1 and isinstance(media_ids[0], list):
@@ -85,7 +133,7 @@ class AgentHandler(asyncio.Queue):
         else:
             logger.error(f"No media handler registered, to forward {media_id} to {forward_to_id}.")
         return new_list
-    
+
     async def save_media(self, parent_id, media_file)->str:
         if self.media_handler:
             return await self.media_handler.save_media(parent_id, media_file)
@@ -118,7 +166,7 @@ class AgentHandler(asyncio.Queue):
             'client_id': client_name
         }
         await self.send(auth_data)
-    
+
     async def send_token_to_reconnect(self, token, agent_share_id):
         token_conn = {
             'cmd': 'aiagent',
@@ -139,7 +187,7 @@ class AgentHandler(asyncio.Queue):
             group_message['choices'] = choices
         #put response in send queue
         await self.send(group_message)
-    
+
     async def query_agent(self, agent_id, query, media_ids: List[str]=[]):
         # generate a uuid without dashes
         query_id = agent_id + str(uuid.uuid4())[8].replace('-', '')
@@ -156,14 +204,14 @@ class AgentHandler(asyncio.Queue):
         #put query in send queue
         await self.send(query_created)
         return query_id
-    
+
     def _record_in_query_tracker(self, query_id, query: dict):
         self.query_index[query_id] = {
             'sent_on': int(time.time()),
             # 'text': query
         }
         return query_id
-    
+
     async def send_backoff_signal(self, to_id):
         """
         If the network sees multiple backoff signals from you to the same agent, 
@@ -174,7 +222,7 @@ class AgentHandler(asyncio.Queue):
         err_signal = self.backoff_signal_template.copy()
         err_signal['to_id'] = to_id
         await self.send(err_signal)
-    
+
     async def put_a_30s_hold(self, group_id):
         """
         Putting a 30s hold on a group will prevent any user in the group from 
@@ -203,7 +251,7 @@ class AgentHandler(asyncio.Queue):
             logger.warning(f"Got response for query ID {query_id} (from agent {response.from_id}). But query is missing from query_index. Dropping the response and sending a lost query signal.")
             await self.send_backoff_signal(response.from_id)
             return
-    
+
     async def wait_for_query_response(self, query_id, timeout=10, check_interval=0.5) -> Message:
         """
         Given a query_id, this function will wait for the response to the query.
@@ -228,7 +276,7 @@ class AgentHandler(asyncio.Queue):
                 logger.warning(f"Timeout while waiting for query response for query ID: {query_id}")
                 return None
             await asyncio.sleep(check_interval)
-    
+
     async def respond_to_agent_query(self, agent_id, query_id, response_data, media_ids: List[str]=[]):
         """
         Send a response to a query from another agent.
@@ -245,147 +293,3 @@ class AgentHandler(asyncio.Queue):
             query_created['data_ids'] = media_ids
         #put query in send queue
         await self.send(query_created)
-
-class Message:
-    def __init__(self, **kwargs) -> None:
-        # check if token in kwargs
-        self.token = kwargs.get('token', None)
-        self.text: str = kwargs.get('text', None)
-        self.data_ids = kwargs.get('data_ids', []) 
-        self.from_id = kwargs.get('from_id', None)
-        self.group_id = kwargs.get('group_id', None)
-        self.query_id = kwargs.get('query_id', None)
-        self.is_resp = kwargs.get('is_resp', False)
-        self.is_err = kwargs.get('is_err', False)
-        
-    def to_dict(self):
-        if self.token:
-            return {
-                'token': self.token
-            }
-        return {
-            'text': self.text,
-            'data_ids': self.data_ids,
-            'from_id': self.from_id,
-            'group_id': self.group_id,
-            'query_id': self.query_id,
-            'is_resp': self.is_resp,
-            'is_err': self.is_err,
-        }
-
-    def to_json(self):
-        return json.dumps(self.to_dict())
-    
-    def __str__(self):
-        return self.to_dict()
-    
-    def _compare_text(self, text):
-        if self.text and self.text == text:
-            return True
-        return False
-    
-    def is_pull_the_plug(self):
-        return self._compare_text('close') and self.from_id == 'sys' and self.group_id == 'sys'
-    
-    def is_from_owner(self):
-        return self.group_id == 'owner'
-
-    @staticmethod
-    def from_json(json_str):
-        message_dict = json.loads(json_str)
-        return Message.from_dict(message_dict)
-    
-    @staticmethod
-    def from_dict(message_dict):
-        return Message(**message_dict)
-
-class AgentReceiver:
-    app: Any
-    ws: WebSocketClientProtocol
-
-
-    def __init__(self, 
-                 agent_share_id, 
-                 connection_code, 
-                 client_name, 
-                 group_message_receiver, 
-                 query_receiver,
-                 contacts=[],
-                 **context) -> None:
-        self.agent_share_id = agent_share_id
-        self.connection_code = connection_code
-        self.client_name = client_name
-        self.group_message_receiver = group_message_receiver
-        self.query_receiver = query_receiver
-        self.reconnection_token = None
-        self.context_to_forward = context
-        # query tracker is any simple key value structure the client will use to keep a track of queries sent and their responses received.
-        # this allows the client to provide a blocking wait for a query response.
-        self.query_tracker = {}
-        self.client_handler = AgentHandler(query_index=self.query_tracker, name=agent_share_id)
-        self.recieved_pull_the_plug = False
-        self.initial_contacts = contacts
-
-
-    async def set_websocket(self, ws: WebSocketClientProtocol):
-        self.ws = ws
-
-    async def before_connect(self):
-        pass
-
-    async def attempt_reconnect(self):
-        pass
-
-    async def on_connect(self):
-        pass
-    
-    async def on_authorize(self):
-        if not self.reconnection_token:
-            logger.info("Authorizing agent connection with connection code")
-            await self.client_handler.send_token_request(self.connection_code, self.agent_share_id, self.client_name)
-        else:
-            logger.info("Restarting agent connection with connection token")
-            await self.client_handler.send_token_to_reconnect(self.reconnection_token, self.agent_share_id)
-    
-    async def before_disconnect(self):
-        logger.info('before_disconnect')
-
-    async def on_disconnect(self):
-        logger.info('on_disconnect')
-    
-    async def on_message(self, message: str):
-        msg = Message.from_json(message)
-        logger.debug(f"Received processed message: {msg.to_dict()}")
-        try:
-            if msg.is_pull_the_plug():
-                logger.info("Received pull the plug signal. Closing connection.")
-                self.recieved_pull_the_plug = True
-                await self.client_handler.send(None)
-            if msg.token:
-                self.reconnection_token = msg.token
-                self.client_handler.register_media_handler(MediaHandler(self.reconnection_token, "/tmp/neosphere_media"))
-                self.client_handler.register_contacts_handler(Contacts(self.reconnection_token, self.initial_contacts))
-                # initialize contacts
-                # Contacts().initial_public_contacts(public_contacts)
-                logger.info(f"Received a connection token. Registered media handler and fetched ({self.client_handler.contacts.get_contact_count()}) contacts.")
-            if msg.is_err:
-                logger.error(f"Received error message.")
-            if msg.group_id:
-                if not msg.is_err:
-                    logger.info('Message is group message')
-                    await self.group_message_receiver(msg, self.client_handler, **self.context_to_forward)
-                else:
-                    logger.error(f"(Group={msg.group_id}) Error from: {msg.from_id}. Error: {msg.text}")
-            elif msg.query_id:
-                if msg.is_resp and not msg.is_err:
-                    logger.info('Message is a query resp')
-                    await self.client_handler._record_query_response_recvd(msg.query_id, msg, **self.context_to_forward)
-                elif msg.is_err:
-                    logger.error(f"(Agent) Error from: {msg.get('from_id')}. Error: {msg.get('text')}")
-                else:
-                    logger.info('Message is a query from another agent')
-                    await self.query_receiver(msg, self.client_handler)
-        except Exception as e:
-            logger.error(f"Error while processing message: {e}")
-            traceback.print_exc()
-            return

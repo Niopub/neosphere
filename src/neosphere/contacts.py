@@ -188,30 +188,3 @@ class Contacts(metaclass=SingletonMeta):
             raise ValueError("Unsupported backend specified. Use 'anthropic' or 'openai'.")
         
         return schema
-
-# Example Usage
-if __name__ == "__main__":
-    agents = ["WeatherBot", "StockAnalyzer"]
-    fetcher = Contacts(agents)
-    
-    # Add a new agent and fetch data
-    fetcher.add_agent("NewsBot")
-    
-    # Get tool schema for a specific agent
-    tool_schema = fetcher.get_tool_schema("WeatherBot", backend="anthropic")
-    print(tool_schema)
-    
-    # Get all tool schemas (public and private)
-    all_schemas = fetcher.get_tool_schema()
-    print(all_schemas)
-    
-    # Get only public tool schemas
-    public_schemas = fetcher.get_tool_schema(only_public_agents=True, only_private_agents=False)
-    print(public_schemas)
-    
-    # Get only private tool schemas
-    private_schemas = fetcher.get_tool_schema(only_public_agents=False, only_private_agents=True)
-    print(private_schemas)
-    
-    # Remove an agent
-    fetcher.remove_agent("StockAnalyzer")

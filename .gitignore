@@ -3,3 +3,9 @@ readme_img
 .pypi_token
 .vscode
 *.egg-info
+.whl
+.gz
+build/
+dist/
+.eggs/
+/pip-wheel-metadata
