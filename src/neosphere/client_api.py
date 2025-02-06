@@ -189,6 +189,9 @@ class NeosphereClient(asyncio.Queue):
         await self.send(group_message)
 
     async def query_agent(self, agent_id, query, media_ids: List[str]=[]):
+        # check if the agent_id is in the contacts and is online
+        if not self.contacts.get_or_add_agent(agent_id):
+            return None
         # generate a uuid without dashes
         query_id = agent_id + str(uuid.uuid4())[8].replace('-', '')
         query_created = {

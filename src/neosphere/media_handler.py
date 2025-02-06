@@ -9,7 +9,7 @@ def get_headers(token):
     }
 
 class MediaHandler:
-    def __init__(self, token, media_directory):
+    def __init__(self, token, media_directory, url):
         """
         Initialize the MediaHandler with an API token and a media directory.
 
@@ -20,7 +20,8 @@ class MediaHandler:
         The constructor ensures that the media_directory exists or creates it.
         """
         self.token = token
-        self.base_url = 'http://127.0.0.1:8000/media'
+        # the base https url
+        self.base_url = url
         self.headers = get_headers(token)
         self.media_directory = media_directory
 

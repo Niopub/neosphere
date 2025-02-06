@@ -49,10 +49,11 @@ class NeosphereAgent:
         self.ai_query_msg_callback = query_receiver
         self.reconnection_token = None
         self.context_to_forward = context
+        self.http_url = None
         # query tracker is any simple key value structure the client will use to keep a track of queries sent and their responses received.
         # this allows the client to provide a blocking wait for a query response.
         self.query_tracker = {}
-        self.client_handler = NeosphereClient(query_index=self.query_tracker, name=agent_share_id)
+        self.neosphere_client = NeosphereClient(query_index=self.query_tracker, name=agent_share_id)
         self.recieved_pull_the_plug = False
         self.initial_contacts = contacts
 
@@ -72,16 +73,19 @@ class NeosphereAgent:
     async def on_authorize(self):
         if not self.reconnection_token:
             logger.info("Authorizing agent connection with connection code")
-            await self.client_handler.send_token_request(self.connection_code, self.agent_share_id, self.client_name)
+            await self.neosphere_client.send_token_request(self.connection_code, self.agent_share_id, self.client_name)
         else:
             logger.info("Restarting agent connection with connection token")
-            await self.client_handler.send_token_to_reconnect(self.reconnection_token, self.agent_share_id)
+            await self.neosphere_client.send_token_to_reconnect(self.reconnection_token, self.agent_share_id)
     
     async def before_disconnect(self):
         logger.info('before_disconnect')
 
     async def on_disconnect(self):
         logger.info('on_disconnect')
+    
+    def set_http_requests_address(self, http_url: str):
+        self.http_url = http_url
     
     async def on_message(self, message: str):
         msg = Message.from_json(message)
@@ -90,31 +94,29 @@ class NeosphereAgent:
             if msg.is_pull_the_plug():
                 logger.info("Received pull the plug signal. Closing connection.")
                 self.recieved_pull_the_plug = True
-                await self.client_handler.send(None)
+                await self.neosphere_client.send(None)
             if msg.token:
                 self.reconnection_token = msg.token
-                self.client_handler.register_media_handler(MediaHandler(self.reconnection_token, "/tmp/neosphere_media"))
-                self.client_handler.register_contacts_handler(Contacts(self.reconnection_token, self.initial_contacts))
+                self.neosphere_client.register_media_handler(MediaHandler(self.reconnection_token, "/tmp/neosphere_media", self.http_url))
+                self.neosphere_client.register_contacts_handler(Contacts(self.reconnection_token, self.initial_contacts, self.http_url))
                 # initialize contacts
                 # Contacts().initial_public_contacts(public_contacts)
-                logger.info(f"Received a connection token. Registered media handler and fetched ({self.client_handler.contacts.get_contact_count()}) contacts.")
+                logger.info(f"Received a connection token. Registered media handler and fetched ({self.neosphere_client.contacts.get_contact_count()}) contacts.")
             if msg.is_err:
                 logger.error(f"Received error message.")
             if msg.group_id:
                 if not msg.is_err:
                     logger.info('Message is group message')
-                    await self.human_group_msg_callback(msg, self.client_handler, **self.context_to_forward)
+                    await self.human_group_msg_callback(msg, self.neosphere_client, **self.context_to_forward)
                 else:
                     logger.error(f"(Group={msg.group_id}) Error from: {msg.from_id}. Error: {msg.text}")
             elif msg.query_id:
                 if msg.is_resp and not msg.is_err:
                     logger.info('Message is a query resp')
-                    await self.client_handler._record_query_response_recvd(msg.query_id, msg, **self.context_to_forward)
-                elif msg.is_err:
-                    logger.error(f"(Agent) Error from: {msg.get('from_id')}. Error: {msg.get('text')}")
+                    await self.neosphere_client._record_query_response_recvd(msg.query_id, msg, **self.context_to_forward)
                 else:
                     logger.info('Message is a query from another agent')
-                    await self.ai_query_msg_callback(msg, self.client_handler)
+                    await self.ai_query_msg_callback(msg, self.neosphere_client)
         except Exception as e:
             logger.error(f"Error while processing message: {e}")
             traceback.print_exc()
@@ -148,9 +150,8 @@ class NeosphereAgentTaskRunner(object):
     MAX_RETRIES = 10
     GAP_BETWEEN_RETRIES_SEC = 2
 
-    def __init__(self, agent: NeosphereAgent, url: str = None) -> None:
-        self.server_url = url if url else "wss://n10s.net/"
-        self.url = self.server_url + "stream/ai"
+    def __init__(self, agent: NeosphereAgent, server_hostname: str = None) -> None:
+
         self.agent = agent
         self._authorize_called = False
         self._listening = False
@@ -214,7 +215,7 @@ class NeosphereAgentTaskRunner(object):
                 logger.error(f'Recieve loop closed with error: {e.reason}, code: {e.code}')
                 self._err_state = True
                 # sending None triggers an iteration in the send loop
-                await self.agent.client_handler.send(None)
+                await self.agent.neosphere_client.send(None)
                 break
             except ConnectionClosedOK as e:
                 logger.info(f'Recieve loop closed without error: {e}')
@@ -222,7 +223,7 @@ class NeosphereAgentTaskRunner(object):
                 self._retry_count = self.MAX_RETRIES + 1
                 self._is_connected = False
                 # sending None triggers an iteration in the send loop
-                await self.agent.client_handler.send(None)
+                await self.agent.neosphere_client.send(None)
                 break
             if message is None:
                 continue
@@ -249,7 +250,7 @@ class NeosphereAgentTaskRunner(object):
                 logger.warning("Send loop closed as we recieved the 'Pull the Plug' signal")
                 break
             # then listen to the message queue
-            message = await self.agent.client_handler.get()
+            message = await self.agent.neosphere_client.get()
             if message is None:
                 continue
             # logger.debug(f"Sending message: {message['cmd']}")
