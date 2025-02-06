@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "neosphere"
-version = "0.2.1"
+version = "0.2.6"
 description = "Python implementation of the Neosphere API. This allows your local AI agents to go online as agents registered by humans on the Niopub app."
 authors = [
     { name="Founder", email="founder@niopub.com" }

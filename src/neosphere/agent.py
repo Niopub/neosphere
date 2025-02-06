@@ -7,11 +7,12 @@ from websockets import connect as ws_connect
 from websockets.client import WebSocketClientProtocol
 from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
 from neosphere.client_api import Message, NeosphereClient
-from neosphere.contacts import Contacts
-from neosphere.media_handler import MediaHandler
+from neosphere.contacts_handler import NeosphereAgentContactsClient
+from neosphere.media_handler import NeosphereMediaClient
 logger = logging.getLogger('neosphere').getChild(__name__)
 import traceback
 
+NEOSPHERE_DNS_NAME = "n10s.net"
 class NeosphereAgent:
     """
     A client agent for the Neosphere network that manages WebSocket connections,
@@ -97,8 +98,8 @@ class NeosphereAgent:
                 await self.neosphere_client.send(None)
             if msg.token:
                 self.reconnection_token = msg.token
-                self.neosphere_client.register_media_handler(MediaHandler(self.reconnection_token, "/tmp/neosphere_media", self.http_url))
-                self.neosphere_client.register_contacts_handler(Contacts(self.reconnection_token, self.initial_contacts, self.http_url))
+                self.neosphere_client.register_media_handler(NeosphereMediaClient(self.reconnection_token, "/tmp/neosphere_media", self.http_url))
+                self.neosphere_client.register_contacts_handler(NeosphereAgentContactsClient(self.reconnection_token, self.initial_contacts, self.http_url))
                 # initialize contacts
                 # Contacts().initial_public_contacts(public_contacts)
                 logger.info(f"Received a connection token. Registered media handler and fetched ({self.neosphere_client.contacts.get_contact_count()}) contacts.")
@@ -135,10 +136,10 @@ class NeosphereAgentTaskRunner(object):
     
     Parameters:
         agent: An instance of NeosphereAgent to run.
-        url: Optional URL for the Neosphere server (defaults to "wss://n10s.net/stream/ai").
+        url: Optional URL for the Neosphere server.
     """
     
-    url: str
+    hostname: str
     agent: NeosphereAgent
     ws: WebSocketClientProtocol
 
@@ -151,8 +152,9 @@ class NeosphereAgentTaskRunner(object):
     GAP_BETWEEN_RETRIES_SEC = 2
 
     def __init__(self, agent: NeosphereAgent, server_hostname: str = None) -> None:
-
         self.agent = agent
+        self.hostname = server_hostname or NEOSPHERE_DNS_NAME
+        self.agent.set_http_requests_address(self._get_url(ws=False))
         self._authorize_called = False
         self._listening = False
         self._is_connected = False
@@ -160,6 +162,19 @@ class NeosphereAgentTaskRunner(object):
         self._err_state = False
         self.recv_active = []
         self.send_active = []
+    
+    def _get_url(self, ws=True):
+            if self.hostname.startswith("localhost"):
+                if ws:
+                    proto = "ws://"
+                else:
+                    proto = "http://"
+            else:
+                if ws:
+                    proto = "wss://"
+                else:
+                    proto = "https://"
+            return f"{proto}{self.hostname}/"
 
     def _clean_state(self):
         self._is_connected = False
@@ -171,7 +186,7 @@ class NeosphereAgentTaskRunner(object):
         self._err_state = False
         await self.agent.before_connect()
         try:
-            self.ws = await ws_connect(self.url)
+            self.ws = await ws_connect(self._get_url()+"stream/ai")
         except ConnectionRefusedError as e:
             logger.error(f'Connection refused: {e}')
             return

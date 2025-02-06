@@ -15,7 +15,7 @@ class SingletonMeta(type):
             cls._instances[cls] = instance
         return cls._instances[cls]
 
-class Contacts(metaclass=SingletonMeta):
+class NeosphereAgentContactsClient:
     """
     This class converts Niopub agents information into tool schemas for use with function
     calling in LLMs. 
@@ -30,16 +30,14 @@ class Contacts(metaclass=SingletonMeta):
     an LLM's tool calling (aka function calling) capabilities.
     """
     def __init__(self, reconn_token, agent_names, url):
-        if not hasattr(self, '_initialized'):
-            self._initialized = True
-            self.public_cache = {}
-            self.private_cache = {}
-            self.token = reconn_token
-            self.initial_contacts_setup(agent_names)
-            self.base_url = url
+        self.public_cache = {}
+        self.private_cache = {}
+        self.token = reconn_token
+        self.base_url = url
+        # self.initial_contacts_setup(agent_names)
 
-    def initial_contacts_setup(self, agent_names):
-        self._fetch_all_agents(agent_names)
+    # def initial_contacts_setup(self, agent_names):
+        # self._fetch_all_agents(agent_names)
     
     def _fetch_all_agents(self, agent_names):
         """Fetch information for all agents, including owned, and cache it."""
@@ -60,6 +58,7 @@ class Contacts(metaclass=SingletonMeta):
                 agent_info = {
                     'share_id': agent['share_id'],
                     'description': agent['description'],
+                    'status': agent['status'],
                     'owned': False,
                     'ts': time.time()
                 }

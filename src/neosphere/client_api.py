@@ -1,5 +1,5 @@
-from neosphere.contacts import Contacts
-from neosphere.media_handler import MediaHandler
+from neosphere.contacts_handler import NeosphereAgentContactsClient
+from neosphere.media_handler import NeosphereMediaClient
 import asyncio
 import time
 import uuid
@@ -90,10 +90,10 @@ class NeosphereClient(asyncio.Queue):
     def get_query_index(self):
         return self.query_index
 
-    def register_media_handler(self, media_handler: MediaHandler):
+    def register_media_handler(self, media_handler: NeosphereMediaClient):
         self.media_handler = media_handler
 
-    def register_contacts_handler(self, contacts: Contacts):
+    def register_contacts_handler(self, contacts: NeosphereAgentContactsClient):
         self.contacts = contacts
 
     async def get_media(self, media_id)->str:

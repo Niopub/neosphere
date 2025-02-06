@@ -8,10 +8,10 @@ def get_headers(token):
         'product': 'niopub',
     }
 
-class MediaHandler:
+class NeosphereMediaClient:
     def __init__(self, token, media_directory, url):
         """
-        Initialize the MediaHandler with an API token and a media directory.
+        Initialize the NeosphereMediaClient with an API token and a media directory.
 
         Parameters:
             token (str): The API token for authentication.
@@ -69,7 +69,7 @@ class MediaHandler:
         # Try to get filename from 'Content-Disposition' header
         content_disposition = response.headers.get('Content-Disposition')
         content_type = response.headers.get('Content-Type')
-        print('MediaHandler.get_media')
+        print('NeosphereMediaClient.get_media')
         print(content_disposition)
         print(content_type)
         if content_disposition:
