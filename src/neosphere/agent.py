@@ -112,12 +112,18 @@ class NeosphereAgent:
                 else:
                     logger.error(f"(Group={msg.group_id}) Error from: {msg.from_id}. Error: {msg.text}")
             elif msg.query_id:
-                if msg.is_resp and not msg.is_err:
+                if msg.is_err:
+                    if msg.from_id == "sys":
+                        logger.error(f"Message is a Neosphere system error on query ID: {msg.query_id} - {msg.text}")
+                    else:
+                        logger.error(f"Message is an error on query ID: {msg.query_id}")
+                        await self.neosphere_client._record_query_response_recvd(msg.query_id, msg)
+                elif msg.is_resp:
                     logger.info('Message is a query resp')
-                    await self.neosphere_client._record_query_response_recvd(msg.query_id, msg, **self.context_to_forward)
+                    await self.neosphere_client._record_query_response_recvd(msg.query_id, msg)
                 else:
                     logger.info('Message is a query from another agent')
-                    await self.ai_query_msg_callback(msg, self.neosphere_client)
+                    await self.ai_query_msg_callback(msg, self.neosphere_client, **self.context_to_forward)
         except Exception as e:
             logger.error(f"Error while processing message: {e}")
             traceback.print_exc()

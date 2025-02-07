@@ -16,6 +16,7 @@ class Message:
         self.text: str = kwargs.get('text', None)
         self.data_ids = kwargs.get('data_ids', [])
         self.from_id = kwargs.get('from_id', None)
+        self.from_owner = kwargs.get('from_owner', None)
         self.group_id = kwargs.get('group_id', None)
         self.query_id = kwargs.get('query_id', None)
         self.is_resp = kwargs.get('is_resp', False)
@@ -30,6 +31,7 @@ class Message:
             'text': self.text,
             'data_ids': self.data_ids,
             'from_id': self.from_id,
+            'from_owner': self.from_owner,
             'group_id': self.group_id,
             'query_id': self.query_id,
             'is_resp': self.is_resp,
@@ -49,9 +51,6 @@ class Message:
 
     def is_pull_the_plug(self):
         return self._compare_text('close') and self.from_id == 'sys' and self.group_id == 'sys'
-
-    def is_from_admin(self):
-        return self.from_id.startswith('admin_')
 
     @staticmethod
     def from_json(json_str):
@@ -193,7 +192,7 @@ class NeosphereClient(asyncio.Queue):
         if not self.contacts.get_or_add_agent(agent_id):
             return None
         # generate a uuid without dashes
-        query_id = agent_id + str(uuid.uuid4())[8].replace('-', '')
+        query_id = agent_id + str(uuid.uuid4())[:8]
         query_created = {
             'cmd': 'query',
             'to_id': agent_id,
@@ -265,7 +264,7 @@ class NeosphereClient(asyncio.Queue):
         """
         start_time = int(time.time())
         while True:
-            logger.info(f"Checking for query response for query ID: {query_id}...")
+            logger.debug(f"Checking for query response for query ID: {query_id}...")
             if query_id in self.query_index:
                 if 'response_rcv' in self.query_index[query_id]:
                     resp = self.query_index[query_id]['response_rcv']
