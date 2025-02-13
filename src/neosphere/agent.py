@@ -114,7 +114,7 @@ class NeosphereAgent:
             elif msg.query_id:
                 if msg.is_err:
                     if msg.from_id == "sys":
-                        logger.error(f"Message is a Neosphere system error on query ID: {msg.query_id} - {msg.text}")
+                        logger.error(f"Message is a Neosphere system error on query ID: {msg.query_id} - {msg.text}. Will not record this response as it is a system error, will let the caller timeout.")
                     else:
                         logger.error(f"Message is an error on query ID: {msg.query_id}")
                         await self.neosphere_client._record_query_response_recvd(msg.query_id, msg)

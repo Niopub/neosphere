@@ -1,3 +1,4 @@
+from requests import HTTPError
 from neosphere.contacts_handler import NeosphereAgentContactsClient
 from neosphere.media_handler import NeosphereMediaClient
 import asyncio
@@ -95,15 +96,8 @@ class NeosphereClient(asyncio.Queue):
     def register_contacts_handler(self, contacts: NeosphereAgentContactsClient):
         self.contacts = contacts
 
-    async def get_media(self, media_id)->str:
-        if self.media_handler:
-            return await self.media_handler.get_media(media_id)
-        else:
-            logger.error(f"No media handler registered, to get {media_id}.")
-            return None
-
     async def get_medias(self, *media_ids):
-        media_list = []
+        media_list = {}
         if len(media_ids) == 1 and isinstance(media_ids[0], list):
             # Called as foo(a, b) where b is a list [b1, b2, b3]
             media_id_list = media_ids[0]
@@ -112,7 +106,12 @@ class NeosphereClient(asyncio.Queue):
             media_id_list = media_ids
         if self.media_handler:
             for media_id in media_id_list:
-                media_list.append(await self.media_handler.get_media(media_id))
+                try:
+                    x = self.media_handler.get_media(media_id)
+                except Exception as e:
+                    logger.error(f"Failed to get media {media_id}: {e}")
+                    continue
+                media_list[media_id] = x
         else:
             logger.error(f"No media handler registered, to get {media_id}.")
         return media_list
@@ -127,8 +126,13 @@ class NeosphereClient(asyncio.Queue):
             media_id_list = media_ids
         if self.media_handler:
             for media_id in media_id_list:
-                new_id = await self.media_handler.create_forward_copy_id(media_id, forward_to_id)
-                new_list.append(new_id)
+                try:
+                    new_id = self.media_handler.create_forward_copy_id(forward_to_id, media_id)
+                    new_list.append(new_id)
+                except HTTPError as e:
+                    logger.error(f"Failed to forward media {media_id} to {forward_to_id}.")
+                    if e.response.status_code == 401:
+                        logger.error(f"Do you have access to {media_id} and is agent {forward_to_id} online?")
         else:
             logger.error(f"No media handler registered, to forward {media_id} to {forward_to_id}.")
         return new_list
@@ -175,6 +179,9 @@ class NeosphereClient(asyncio.Queue):
         await self.send(token_conn)
 
     async def respond_to_group_message(self, group_id, response_data, media_ids: List[str]=[], choices: List[str]=[]):
+        if not group_id:
+            logger.error("Group ID is required to send a response to group message.")
+            return None
         group_message = {
             'cmd': 'group-response',
             'group_id': group_id,
@@ -187,12 +194,15 @@ class NeosphereClient(asyncio.Queue):
         #put response in send queue
         await self.send(group_message)
 
-    async def query_agent(self, agent_id, query, media_ids: List[str]=[]):
+    async def query_agent(self, agent_id, query, media_ids: List[str]=[], query_id: str=None):
+        if not agent_id:
+            logger.error("Agent ID is required to query an agent.")
+            return None
         # check if the agent_id is in the contacts and is online
         if not self.contacts.get_or_add_agent(agent_id):
             return None
         # generate a uuid without dashes
-        query_id = agent_id + str(uuid.uuid4())[:8]
+        query_id = agent_id + str(uuid.uuid4())[:8] if not query_id else query_id
         query_created = {
             'cmd': 'query',
             'to_id': agent_id,

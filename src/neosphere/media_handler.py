@@ -21,7 +21,7 @@ class NeosphereMediaClient:
         """
         self.token = token
         # the base https url
-        self.base_url = url
+        self.base_url = url+"media/"
         self.headers = get_headers(token)
         self.media_directory = media_directory
 
@@ -43,8 +43,9 @@ class NeosphereMediaClient:
         Returns:
             dict: The JSON response from the API for the new media.
         """
-        # Fetch the media data using the media_id
-        url = f"{self.base_url}/forward/{forward_to_id}/{media_id}"
+        # Fetch the media data using the media_id.
+        # Currently we only support with param ?for_agent=true
+        url = self.base_url+f"forward/{forward_to_id}/{media_id}?for_agent=true"
         response = requests.post(url, headers=self.headers, stream=True)
         response.raise_for_status()
         # get the media ID from response json
@@ -61,7 +62,8 @@ class NeosphereMediaClient:
         Returns:
             str: The file path where the media is saved.
         """
-        url = f"{self.base_url}/{media_id}"
+        file_path = ""
+        url = f"{self.base_url}{media_id}"
         response = requests.get(url, headers=self.headers, stream=True)
         response.raise_for_status()
 
@@ -69,13 +71,10 @@ class NeosphereMediaClient:
         # Try to get filename from 'Content-Disposition' header
         content_disposition = response.headers.get('Content-Disposition')
         content_type = response.headers.get('Content-Type')
-        print('NeosphereMediaClient.get_media')
-        print(content_disposition)
-        print(content_type)
         if content_disposition:
             # Parse filename from content_disposition
             import re
-            filename_match = re.search('filename="?(.+)"?', content_disposition)
+            filename_match = re.search(r'filename="?([^"]+)"?', content_disposition)
             if filename_match:
                 filename = filename_match.group(1)
             else:
